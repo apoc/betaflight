@@ -43,6 +43,7 @@
 #define FFT_BIN_COUNT         (FFT_WINDOW_SIZE / 2)
 #define FFT_MIN_FREQ          100  // not interested in filtering frequencies below 100Hz
 #define FFT_SAMPLING_RATE     1000  // allows analysis up to 500Hz which is more than motors create
+#define FFT_MAX_FREQUENCY     (FFT_SAMPLING_RATE / 2) // nyquist rate
 #define FFT_BPF_HZ            200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
 #define DYN_NOTCH_WIDTH       100  // just an orientation and start value
 #define DYN_NOTCH_CHANGERATE  60  // lower cut does not improve the performance much, higher cut makes it worse...
@@ -58,7 +59,6 @@ static arm_rfft_fast_instance_f32 fftInstance;
 static FAST_RAM float fftData[FFT_WINDOW_SIZE];
 static FAST_RAM float rfftData[FFT_WINDOW_SIZE];
 static FAST_RAM gyroFftData_t fftResult[3];
-static uint16_t fftMaxFreq = 0;             // nyquist rate
 static uint16_t fftIdx = 0;                 // use a circular buffer for the last FFT_WINDOW_SIZE samples
 
 
@@ -97,7 +97,6 @@ void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
     const uint32_t samplingFrequency = 1000000 / targetLooptimeUs;
     fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
-    fftMaxFreq = FFT_SAMPLING_RATE / 2;
     fftResolution = FFT_SAMPLING_RATE / FFT_WINDOW_SIZE;
     arm_rfft_fast_init_f32(&fftInstance, FFT_WINDOW_SIZE);
 
@@ -186,7 +185,7 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
     switch (step) {
         case STEP_ARM_CFFT_F32:
         {
-            switch (FFT_WINDOW_SIZE / 2) {
+            switch (FFT_BIN_COUNT) {
             case 16:
                 // 16us
                 arm_cfft_radix8by2_f32(Sint, fftData);
@@ -197,7 +196,7 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
                 break;
             case 64:
                 // 70us
-                arm_radix8_butterfly_f32(fftData, FFT_WINDOW_SIZE / 2, Sint->pTwiddle, 1);
+                arm_radix8_butterfly_f32(fftData, FFT_BIN_COUNT, Sint->pTwiddle, 1);
                 break;
             }
             DEBUG_SET(DEBUG_FFT_TIME, 1, micros() - startTime);
@@ -252,9 +251,9 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
 
                 // don't go below the minimal cutoff frequency + 10 and don't jump around too much
                 float centerFreq;
-                centerFreq = constrain(fftMeanIndex * fftResolution, DYN_NOTCH_MIN_CUTOFF + 10, fftMaxFreq);
+                centerFreq = constrain(fftMeanIndex * fftResolution, DYN_NOTCH_MIN_CUTOFF + 10, FFT_MAX_FREQUENCY);
                 centerFreq = biquadFilterApply(&fftFreqFilter[axis], centerFreq);
-                centerFreq = constrain(centerFreq, DYN_NOTCH_MIN_CUTOFF + 10, fftMaxFreq);
+                centerFreq = constrain(centerFreq, DYN_NOTCH_MIN_CUTOFF + 10, FFT_MAX_FREQUENCY);
                 fftResult[axis].centerFreq = centerFreq;
                 if (axis == 0) {
                     DEBUG_SET(DEBUG_FFT, 3, lrintf(fftMeanIndex * 100));
