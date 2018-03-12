@@ -20,7 +20,6 @@
 #include "common/time.h"
 #include "common/filter.h"
 
-#define GYRO_FFT_BIN_COUNT      16 // FFT_WINDOW_SIZE / 2
 #define FFT_SAMPLING_FREQUENCY  4000  // if gyro loop is faster than FFT_SAMPLING_FREQUENCY limit update speed to FFT_SAMPLING_FREQUENCY
 #define FFT_SAMPLING_TIME       (1000000 / FFT_SAMPLING_FREQUENCY)
 

@@ -39,18 +39,18 @@
 // A sampling frequency of 1000 and max frequency of 500 at a window size of 32 gives 16 frequency bins each with a width 31.25Hz
 // Eg [0,31), [31,62), [62, 93) etc
 
-#define FFT_WINDOW_SIZE                32  // max for f3 targets
-#define FFT_MIN_FREQ                  100  // not interested in filtering frequencies below 100Hz
-#define FFT_SAMPLING_RATE            1000  // allows analysis up to 500Hz which is more than motors create
-#define FFT_BPF_HZ                    200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
-#define DYN_NOTCH_WIDTH               100  // just an orientation and start value
-#define DYN_NOTCH_CHANGERATE           60  // lower cut does not improve the performance much, higher cut makes it worse...
-#define DYN_NOTCH_MIN_CUTOFF          120  // don't cut too deep into low frequencies
-#define DYN_NOTCH_MAX_CUTOFF          200  // don't go above this cutoff (better filtering with "constant" delay at higher center frequencies)
+#define FFT_WINDOW_SIZE       32  // max for f3 targets
+#define FFT_BIN_COUNT         (FFT_WINDOW_SIZE / 2)
+#define FFT_MIN_FREQ          100  // not interested in filtering frequencies below 100Hz
+#define FFT_SAMPLING_RATE     1000  // allows analysis up to 500Hz which is more than motors create
+#define FFT_BPF_HZ            200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
+#define DYN_NOTCH_WIDTH       100  // just an orientation and start value
+#define DYN_NOTCH_CHANGERATE  60  // lower cut does not improve the performance much, higher cut makes it worse...
+#define DYN_NOTCH_MIN_CUTOFF  120  // don't cut too deep into low frequencies
+#define DYN_NOTCH_MAX_CUTOFF  200  // don't go above this cutoff (better filtering with "constant" delay at higher center frequencies)
 
 #define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
-static uint8_t fftBinCount;
 static float fftResolution;                 // hz per bin
 static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
 
@@ -92,18 +92,12 @@ void initGyroData(void)
     }
 }
 
-static inline int fftFreqToBin(int freq)
-{
-    return ((FFT_WINDOW_SIZE / 2 - 1) * freq) / (fftMaxFreq);
-}
-
 void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
 {
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
     const uint32_t samplingFrequency = 1000000 / targetLooptimeUs;
     fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
     fftMaxFreq = FFT_SAMPLING_RATE / 2;
-    fftBinCount = fftFreqToBin(fftMaxFreq) + 1;
     fftResolution = FFT_SAMPLING_RATE / FFT_WINDOW_SIZE;
     arm_rfft_fast_init_f32(&fftInstance, FFT_WINDOW_SIZE);
 
@@ -228,7 +222,7 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
         case STEP_ARM_CMPLX_MAG_F32:
         {
             // 8us
-            arm_cmplx_mag_f32(rfftData, fftData, fftBinCount);
+            arm_cmplx_mag_f32(rfftData, fftData, FFT_BIN_COUNT);
             DEBUG_SET(DEBUG_FFT_TIME, 2, micros() - startTime);
             step++;
             FALLTHROUGH;
@@ -242,7 +236,7 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
             fftResult[axis].maxVal = 0;
             // iterate over fft data and calculate weighted indexes
             float squaredData;
-            for (int i = 0; i < fftBinCount; i++) {
+            for (int i = 0; i < FFT_BIN_COUNT; i++) {
                 squaredData = fftData[i] * fftData[i];  //more weight on higher peaks
                 fftResult[axis].maxVal = MAX(fftResult[axis].maxVal, squaredData);
                 fftSum += squaredData;
