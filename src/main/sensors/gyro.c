@@ -448,7 +448,7 @@ static bool gyroInitSensor(gyroSensor_t *gyroSensor)
     gyroInitSensorFilters(gyroSensor);
 
 #ifdef USE_GYRO_DATA_ANALYSE
-    gyroDataAnalyseInit(gyro.targetLooptime);
+    gyroDataAnalyseInit(gyro.targetLooptime >= FFT_SAMPLING_TIME ? gyro.targetLooptime : FFT_SAMPLING_TIME);
 #endif
     return true;
 }
@@ -916,7 +916,11 @@ static FAST_CODE void gyroUpdateSensor(gyroSensor_t *gyroSensor, timeUs_t curren
 
 #ifdef USE_GYRO_DATA_ANALYSE
     if (isDynamicFilterActive()) {
-        gyroDataAnalyse(&gyroSensor->gyroDev, gyroSensor->notchFilterDyn);
+        static timeDelta_t lastDynFilterUpdateTimeUs = 0;
+        if (currentTimeUs - lastDynFilterUpdateTimeUs >= FFT_SAMPLING_TIME) {
+            lastDynFilterUpdateTimeUs = currentTimeUs;
+            gyroDataAnalyse(&gyroSensor->gyroDev, gyroSensor->notchFilterDyn);
+        }
     }
 #endif
 

@@ -50,7 +50,6 @@
 
 #define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
-static uint16_t samplingFrequency;          // gyro rate
 static uint8_t fftBinCount;
 static float fftResolution;                 // hz per bin
 static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
@@ -101,7 +100,7 @@ static inline int fftFreqToBin(int freq)
 void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
 {
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
-    samplingFrequency = 1000000 / targetLooptimeUs;
+    const uint32_t samplingFrequency = 1000000 / targetLooptimeUs;
     fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
     fftMaxFreq = FFT_SAMPLING_RATE / 2;
     fftBinCount = fftFreqToBin(fftMaxFreq) + 1;
