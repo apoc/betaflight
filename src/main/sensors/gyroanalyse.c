@@ -53,29 +53,29 @@
 static uint16_t samplingFrequency;          // gyro rate
 static uint8_t fftBinCount;
 static float fftResolution;                 // hz per bin
-static float gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
+static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
 
 static arm_rfft_fast_instance_f32 fftInstance;
-static float fftData[FFT_WINDOW_SIZE];
-static float rfftData[FFT_WINDOW_SIZE];
-static gyroFftData_t fftResult[3];
+static FAST_RAM float fftData[FFT_WINDOW_SIZE];
+static FAST_RAM float rfftData[FFT_WINDOW_SIZE];
+static FAST_RAM gyroFftData_t fftResult[3];
 static uint16_t fftMaxFreq = 0;             // nyquist rate
 static uint16_t fftIdx = 0;                 // use a circular buffer for the last FFT_WINDOW_SIZE samples
 
 
 // accumulator for oversampled data => no aliasing and less noise
-static float fftAcc[3] = {0, 0, 0};
-static int fftAccCount = 0;
+static FAST_RAM float fftAcc[3] = {0, 0, 0};
+static FAST_RAM int fftAccCount = 0;
 static int fftSamplingScale;
 
 // bandpass filter gyro data
-static biquadFilter_t fftGyroFilter[3];
+static FAST_RAM biquadFilter_t fftGyroFilter[3];
 
 // filter for smoothing frequency estimation
-static biquadFilter_t fftFreqFilter[3];
+static FAST_RAM biquadFilter_t fftFreqFilter[3];
 
 // Hanning window, see https://en.wikipedia.org/wiki/Window_function#Hann_.28Hanning.29_window
-static float hanningWindow[FFT_WINDOW_SIZE];
+static FAST_RAM float hanningWindow[FFT_WINDOW_SIZE];
 
 void initHanning(void)
 {
