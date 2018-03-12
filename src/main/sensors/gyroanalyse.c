@@ -45,6 +45,7 @@
 #define FFT_SAMPLING_RATE     1000  // allows analysis up to 500Hz which is more than motors create
 #define FFT_MAX_FREQUENCY     (FFT_SAMPLING_RATE / 2) // nyquist rate
 #define FFT_BPF_HZ            200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
+#define FFT_RESOLUTION        ((float)FFT_SAMPLING_RATE / FFT_WINDOW_SIZE) // hz per bin
 #define DYN_NOTCH_WIDTH       100  // just an orientation and start value
 #define DYN_NOTCH_CHANGERATE  60  // lower cut does not improve the performance much, higher cut makes it worse...
 #define DYN_NOTCH_MIN_CUTOFF  120  // don't cut too deep into low frequencies
@@ -52,7 +53,6 @@
 
 #define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
-static float fftResolution;                 // hz per bin
 static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
 
 static arm_rfft_fast_instance_f32 fftInstance;
@@ -97,7 +97,6 @@ void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
     const uint32_t samplingFrequency = 1000000 / targetLooptimeUs;
     fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
-    fftResolution = FFT_SAMPLING_RATE / FFT_WINDOW_SIZE;
     arm_rfft_fast_init_f32(&fftInstance, FFT_WINDOW_SIZE);
 
     initGyroData();
@@ -251,7 +250,7 @@ void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn)
 
                 // don't go below the minimal cutoff frequency + 10 and don't jump around too much
                 float centerFreq;
-                centerFreq = constrain(fftMeanIndex * fftResolution, DYN_NOTCH_MIN_CUTOFF + 10, FFT_MAX_FREQUENCY);
+                centerFreq = constrain(fftMeanIndex * FFT_RESOLUTION, DYN_NOTCH_MIN_CUTOFF + 10, FFT_MAX_FREQUENCY);
                 centerFreq = biquadFilterApply(&fftFreqFilter[axis], centerFreq);
                 centerFreq = constrain(centerFreq, DYN_NOTCH_MIN_CUTOFF + 10, FFT_MAX_FREQUENCY);
                 fftResult[axis].centerFreq = centerFreq;
