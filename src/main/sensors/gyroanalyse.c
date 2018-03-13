@@ -54,19 +54,22 @@
 #define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
 static uint16_t samplingFrequency;          // gyro rate
-static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
+static uint16_t fftSamplingScale;
+
+// gyro data used for frequency analysis
+static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];
 
 static arm_rfft_fast_instance_f32 fftInstance;
 static FAST_RAM float fftData[FFT_WINDOW_SIZE];
 static FAST_RAM float rfftData[FFT_WINDOW_SIZE];
 static FAST_RAM gyroFftData_t fftResult[3];
-static uint16_t fftIdx = 0;                 // use a circular buffer for the last FFT_WINDOW_SIZE samples
+
+// use a circular buffer for the last FFT_WINDOW_SIZE samples
+static uint16_t fftIdx = 0;
 
 
 // accumulator for oversampled data => no aliasing and less noise
 static FAST_RAM float fftAcc[3] = {0, 0, 0};
-static FAST_RAM int fftAccCount = 0;
-static int fftSamplingScale;
 
 // bandpass filter gyro data
 static FAST_RAM biquadFilter_t fftGyroFilter[3];
@@ -124,6 +127,9 @@ const gyroFftData_t *gyroFftData(int axis)
  */
 void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
 {
+    static uint32_t fftAccCount = 0;
+    static uint32_t gyroDataAnalyseUpdateTicks = 0;
+
     // if gyro sampling is > 1kHz, accumulate multiple samples
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
         fftAcc[axis] += gyroDev->gyroADC[axis];
@@ -133,6 +139,9 @@ void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
     // this runs at 1kHz
     if (fftAccCount == fftSamplingScale) {
         fftAccCount = 0;
+
+        // We need 3 * 4 tick to update all axis with newly sampled value
+        gyroDataAnalyseUpdateTicks = 12;
 
         //calculate mean value of accumulated samples
         for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
@@ -148,7 +157,9 @@ void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
     }
 
     // calculate FFT and update filters
-    gyroDataAnalyseUpdate(notchFilterDyn);
+    if (gyroDataAnalyseUpdateTicks-- > 0) {
+        gyroDataAnalyseUpdate(notchFilterDyn);
+    }
 }
 
 void stage_rfft_f32(arm_rfft_fast_instance_f32 * S, float32_t * p, float32_t * pOut);
