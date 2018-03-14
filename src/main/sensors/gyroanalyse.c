@@ -53,7 +53,6 @@
 
 #define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
-static uint16_t samplingFrequency;          // gyro rate
 static uint16_t fftSamplingScale;
 
 // gyro data used for frequency analysis
@@ -99,7 +98,7 @@ void initGyroData(void)
 void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
 {
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
-    samplingFrequency = 1000000 / targetLooptimeUs;
+    const uint16_t samplingFrequency = 1000000 / targetLooptimeUs;
     fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
     arm_rfft_fast_init_f32(&fftInstance, FFT_WINDOW_SIZE);
 
@@ -108,7 +107,7 @@ void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
 
     // recalculation of filters takes 4 calls per axis => each filter gets updated every 3 * 4 = 12 calls
     // at 4khz gyro loop rate this means 4khz / 4 / 3 = 333Hz => update every 3ms
-    float looptime = targetLooptimeUs * 4 * 3;
+    float looptime = 1000000 / FFT_SAMPLING_RATE + targetLooptimeUs * 4 * 3;
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
         fftResult[axis].centerFreq = 200; // any init value
         biquadFilterInitLPF(&fftFreqFilter[axis], DYN_NOTCH_CHANGERATE, looptime);
@@ -140,9 +139,6 @@ void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
     if (fftAccCount == fftSamplingScale) {
         fftAccCount = 0;
 
-        // We need 3 * 4 tick to update all axis with newly sampled value
-        gyroDataAnalyseUpdateTicks = 12;
-
         //calculate mean value of accumulated samples
         for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
             float sample = fftAcc[axis] / fftSamplingScale;
@@ -154,6 +150,9 @@ void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
         }
 
         fftIdx = (fftIdx + 1) % FFT_WINDOW_SIZE;
+
+        // We need 3 * 4 tick to update all axis with newly sampled value
+        gyroDataAnalyseUpdateTicks = 12;
     }
 
     // calculate FFT and update filters
