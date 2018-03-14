@@ -42,16 +42,13 @@
 #define FFT_WINDOW_SIZE       32  // max for f3 targets
 #define FFT_BIN_COUNT         (FFT_WINDOW_SIZE / 2)
 #define FFT_MIN_FREQ          100  // not interested in filtering frequencies below 100Hz
-#define FFT_SAMPLING_RATE     1000  // allows analysis up to 500Hz which is more than motors create
 #define FFT_MAX_FREQUENCY     (FFT_SAMPLING_RATE / 2) // nyquist rate
-#define FFT_BPF_HZ            200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
 #define FFT_RESOLUTION        ((float)FFT_SAMPLING_RATE / FFT_WINDOW_SIZE) // hz per bin
+#define FFT_SAMPLING_SCALE    (FFT_SAMPLING_FREQUENCY / FFT_SAMPLING_RATE)
 #define DYN_NOTCH_WIDTH       100  // just an orientation and start value
 #define DYN_NOTCH_CHANGERATE  60  // lower cut does not improve the performance much, higher cut makes it worse...
 #define DYN_NOTCH_MIN_CUTOFF  120  // don't cut too deep into low frequencies
 #define DYN_NOTCH_MAX_CUTOFF  200  // don't go above this cutoff (better filtering with "constant" delay at higher center frequencies)
-
-#define BIQUAD_Q 1.0f / sqrtf(2.0f)         // quality factor - butterworth
 
 static float FAST_RAM gyroData[3][FFT_WINDOW_SIZE];  // gyro data used for frequency analysis
 
@@ -60,15 +57,6 @@ static FAST_RAM float fftData[FFT_WINDOW_SIZE];
 static FAST_RAM float rfftData[FFT_WINDOW_SIZE];
 static FAST_RAM gyroFftData_t fftResult[3];
 static uint16_t fftIdx = 0;                 // use a circular buffer for the last FFT_WINDOW_SIZE samples
-
-
-// accumulator for oversampled data => no aliasing and less noise
-static FAST_RAM float fftAcc[3] = {0, 0, 0};
-static FAST_RAM int fftAccCount = 0;
-static int fftSamplingScale;
-
-// bandpass filter gyro data
-static FAST_RAM biquadFilter_t fftGyroFilter[3];
 
 // filter for smoothing frequency estimation
 static FAST_RAM biquadFilter_t fftFreqFilter[3];
@@ -95,20 +83,17 @@ void initGyroData(void)
 void gyroDataAnalyseInit(uint32_t targetLooptimeUs)
 {
     // initialise even if FEATURE_DYNAMIC_FILTER not set, since it may be set later
-    const uint32_t samplingFrequency = 1000000 / targetLooptimeUs;
-    fftSamplingScale = samplingFrequency / FFT_SAMPLING_RATE;
     arm_rfft_fast_init_f32(&fftInstance, FFT_WINDOW_SIZE);
 
     initGyroData();
     initHanning();
 
     // recalculation of filters takes 4 calls per axis => each filter gets updated every 3 * 4 = 12 calls
-    // at 4khz gyro loop rate this means 4khz / 4 / 3 = 333Hz => update every 3ms
-    float looptime = targetLooptimeUs * 4 * 3;
+    // we recalculate after the sample is acquired (FFT_SAMPLING_RATE rate) and updating runs in main gyro loop
+    float looptime = 1000000 / FFT_SAMPLING_RATE + targetLooptimeUs * 4 * 3;
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
         fftResult[axis].centerFreq = 200; // any init value
         biquadFilterInitLPF(&fftFreqFilter[axis], DYN_NOTCH_CHANGERATE, looptime);
-        biquadFilterInit(&fftGyroFilter[axis], FFT_BPF_HZ, 1000000 / FFT_SAMPLING_RATE, BIQUAD_Q, FILTER_BPF);
     }
 }
 
@@ -121,22 +106,24 @@ const gyroFftData_t *gyroFftData(int axis)
 /*
  * Collect gyro data, to be analysed in gyroDataAnalyseUpdate function
  */
-void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
+bool gyroDataAnalyse(float gyroFFTData[XYZ_AXIS_COUNT], const struct gyroDev_s *gyroDev)
 {
+    // accumulator for oversampled data => no aliasing and less noise
+    static float fftAcc[XYZ_AXIS_COUNT] = {0, 0, 0};
+    static int fftAccCount = 0;
+
     // if gyro sampling is > 1kHz, accumulate multiple samples
     for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-        fftAcc[axis] += gyroDev->gyroADC[axis];
+        fftAcc[axis] += gyroFFTData[axis];
     }
-    fftAccCount++;
 
     // this runs at 1kHz
-    if (fftAccCount == fftSamplingScale) {
+    if (++fftAccCount == FFT_SAMPLING_SCALE) {
         fftAccCount = 0;
 
         //calculate mean value of accumulated samples
         for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
-            float sample = fftAcc[axis] / fftSamplingScale;
-            sample = biquadFilterApply(&fftGyroFilter[axis], sample);
+            float sample = fftAcc[axis] / FFT_SAMPLING_SCALE;
             gyroData[axis][fftIdx] = sample;
             if (axis == 0)
                 DEBUG_SET(DEBUG_FFT, 2, lrintf(sample * gyroDev->scale));
@@ -144,10 +131,11 @@ void gyroDataAnalyse(const gyroDev_t *gyroDev, biquadFilter_t *notchFilterDyn)
         }
 
         fftIdx = (fftIdx + 1) % FFT_WINDOW_SIZE;
-    }
 
-    // calculate FFT and update filters
-    gyroDataAnalyseUpdate(notchFilterDyn);
+        // signalize we have new sample ready
+        return true;
+    }
+    return false;
 }
 
 void stage_rfft_f32(arm_rfft_fast_instance_f32 * S, float32_t * p, float32_t * pOut);

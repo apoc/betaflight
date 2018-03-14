@@ -20,8 +20,12 @@
 #include "common/time.h"
 #include "common/filter.h"
 
+#define FFT_BPF_HZ              200  // use a bandpass on gyro data to ignore extreme low and extreme high frequencies
+#define BIQUAD_Q                (1.0f / sqrtf(2.0f)) // quality factor - butterworth
+
 #define FFT_SAMPLING_FREQUENCY  4000  // if gyro loop is faster than FFT_SAMPLING_FREQUENCY limit update speed to FFT_SAMPLING_FREQUENCY
 #define FFT_SAMPLING_TIME       (1000000 / FFT_SAMPLING_FREQUENCY)
+#define FFT_SAMPLING_RATE       1000  // allows analysis up to 500Hz which is more than motors create
 
 typedef struct gyroFftData_s {
     float maxVal;
@@ -31,5 +35,5 @@ typedef struct gyroFftData_s {
 void gyroDataAnalyseInit(uint32_t targetLooptime);
 const gyroFftData_t *gyroFftData(int axis);
 struct gyroDev_s;
-void gyroDataAnalyse(const struct gyroDev_s *gyroDev, biquadFilter_t *notchFilterDyn);
+bool gyroDataAnalyse(float gyroFFTData[XYZ_AXIS_COUNT], const struct gyroDev_s *gyroDev);
 void gyroDataAnalyseUpdate(biquadFilter_t *notchFilterDyn);

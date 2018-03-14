@@ -107,6 +107,8 @@ typedef union gyroSoftFilter_u {
 typedef struct gyroSensor_s {
     gyroDev_t gyroDev;
     gyroCalibration_t calibration;
+    // bandpass filter gyro data for FFT
+    biquadFilter_t fftGyroFilter[XYZ_AXIS_COUNT];
     // gyro soft filter
     filterApplyFnPtr softLpfFilterApplyFn;
     gyroSoftLpfFilter_t softLpfFilter;
@@ -448,7 +450,7 @@ static bool gyroInitSensor(gyroSensor_t *gyroSensor)
     gyroInitSensorFilters(gyroSensor);
 
 #ifdef USE_GYRO_DATA_ANALYSE
-    gyroDataAnalyseInit(gyro.targetLooptime >= FFT_SAMPLING_TIME ? gyro.targetLooptime : FFT_SAMPLING_TIME);
+    gyroDataAnalyseInit(gyro.targetLooptime);
 #endif
     return true;
 }
@@ -552,6 +554,13 @@ bool gyroInit(void)
     }
 #endif
     return ret;
+}
+
+void gyroInitFilterFFT(gyroSensor_t *gyroSensor)
+{
+    for (int axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
+        biquadFilterInit(&gyroSensor->fftGyroFilter[axis], FFT_BPF_HZ, gyro.targetLooptime, BIQUAD_Q, FILTER_BPF);
+    }
 }
 
 void gyroInitFilterLpf(gyroSensor_t *gyroSensor, uint8_t lpfHz)
@@ -698,6 +707,7 @@ static void gyroInitSensorFilters(gyroSensor_t *gyroSensor)
 #elif defined(USE_GYRO_BIQUAD_RC_FIR2)
     gyroInitFilterBiquadRCFIR2(gyroSensor, gyroConfig()->gyro_soft_lpf_hz_2);
 #endif
+    gyroInitFilterFFT(gyroSensor);
     gyroInitFilterLpf(gyroSensor, gyroConfig()->gyro_soft_lpf_hz);
     gyroInitFilterNotch1(gyroSensor, gyroConfig()->gyro_soft_notch_hz_1, gyroConfig()->gyro_soft_notch_cutoff_1);
     gyroInitFilterNotch2(gyroSensor, gyroConfig()->gyro_soft_notch_hz_2, gyroConfig()->gyro_soft_notch_cutoff_2);
@@ -916,10 +926,27 @@ static FAST_CODE void gyroUpdateSensor(gyroSensor_t *gyroSensor, timeUs_t curren
 
 #ifdef USE_GYRO_DATA_ANALYSE
     if (isDynamicFilterActive()) {
+        static uint8_t gyroDataAnalyseUpdateStepCounter = 0;
+
+        // filter data for gyroDataAnalyse
+        float gyroFFTData[XYZ_AXIS_COUNT];
+        for (int axis = 0; axis < XYZ_AXIS_COUNT; ++axis) {
+            float gyroADCf = gyroSensor->gyroDev.gyroADC[axis];
+            gyroFFTData[axis] = biquadFilterApply(&gyroSensor->fftGyroFilter[axis], gyroADCf);
+        }
+
         static timeDelta_t lastDynFilterUpdateTimeUs = 0;
         if (currentTimeUs - lastDynFilterUpdateTimeUs >= FFT_SAMPLING_TIME) {
             lastDynFilterUpdateTimeUs = currentTimeUs;
-            gyroDataAnalyse(&gyroSensor->gyroDev, gyroSensor->notchFilterDyn);
+            if (gyroDataAnalyse(gyroFFTData, &gyroSensor->gyroDev)) {
+                // 12 steps to calculate and update dynamic notch filter on all axis
+                gyroDataAnalyseUpdateStepCounter = 12;
+            }
+        }
+        // calculate FFT and update filters
+	    if (gyroDataAnalyseUpdateStepCounter > 0) {
+            gyroDataAnalyseUpdate(gyroSensor->notchFilterDyn);
+            --gyroDataAnalyseUpdateStepCounter;
         }
     }
 #endif
